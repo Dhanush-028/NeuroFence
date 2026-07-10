@@ -19,6 +19,9 @@ import torch
 def load_model_safely(model_name: str = "sshleifer/tiny-gpt2"):
     """
     Loads a HuggingFace model + tokenizer in a locked-down way.
+    `model_name` can be either a HuggingFace hub ID (e.g. "distilgpt2")
+    or a path to a local folder containing safetensors weights + config —
+    from_pretrained() handles both transparently.
     Returns (model, tokenizer).
     """
     print(f"[NeuroFence] Loading model: {model_name}")
