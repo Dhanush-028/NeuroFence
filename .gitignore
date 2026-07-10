@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.venv/
+
+# Downloaded models (can be gigabytes, never commit these)
+models/
+*.safetensors
+*.bin
+*.pt
+.cache/
+huggingface_cache/
+
+# OS/editor junk
+.DS_Store
+.vscode/
+.idea/
+
+# Env secrets if you add any later
+.env
