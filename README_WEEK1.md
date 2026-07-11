@@ -52,3 +52,10 @@ a screenshot of the working UI. You'll want this for your internship report.
 Once this works, Week 2 is: build the adversarial prompt fuzzer (feed
 thousands of prompts, not just 3) and start the neuron heatmap view in the UI.
 I'll walk you through that once you've got Week 1 running and confirm it works.
+
+## Architecture generalization test (Day before Week 1 deadline)
+Tested `activation_hooks.py` on a second, architecturally different model
+to confirm the hook-matching logic isn't GPT-2-specific:
+- Model: `EleutherAI/pythia-70m` (GPT-NeoX architecture, different layer naming than GPT-2)
+- Result: 72 layers hooked successfully, activations captured without errors
+- Confirms hook logic generalizes across at least 2 distinct architectures

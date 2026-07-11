@@ -6,11 +6,11 @@ model files and displaying basic metadata."
 Run with: python desktop_ui.py
 """
 import sys
+from sandbox_loader import load_model_safely, get_model_metadata
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QLabel,
     QTextEdit, QFileDialog, QLineEdit, QHBoxLayout
 )
-from sandbox_loader import load_model_safely, get_model_metadata
 
 
 class NeuroFenceWindow(QWidget):
