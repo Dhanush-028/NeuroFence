@@ -21,3 +21,4 @@ huggingface_cache/
 
 # Env secrets if you add any later
 .env
+baseline_activations.json
