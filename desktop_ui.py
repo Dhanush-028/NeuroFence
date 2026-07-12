@@ -1,15 +1,3 @@
-"""
-NeuroFence - Week 1 (Sandbox + Metadata) + Week 2 Day 3 (Heatmap)
-Desktop UI (PyQt5).
-
-Week 1 goal: "Initialize a local desktop application. Create views for
-uploading model files and displaying basic metadata."
-
-Week 2 goal (this addition): "Build a visual matrix in the UI (like a
-heatmap) representing the active vs. dormant neurons in the model."
-
-Run with: python desktop_ui.py
-"""
 import sys
 import json
 import os
@@ -120,11 +108,7 @@ class NeuroFenceWindow(QWidget):
         self.category_dropdown.currentTextChanged.connect(self.on_selection_changed)
         controls_row.addWidget(self.category_dropdown)
 
-        controls_row.addWidget(QLabel("Layer:"))
-        self.layer_dropdown = QComboBox()
-        self.layer_dropdown.currentTextChanged.connect(self.on_selection_changed)
-        controls_row.addWidget(self.layer_dropdown)
-
+        controls_row.addStretch()
         layout.addLayout(controls_row)
 
         self.heatmap_status = QLabel(
@@ -133,11 +117,12 @@ class NeuroFenceWindow(QWidget):
         )
         layout.addWidget(self.heatmap_status)
 
-        # Scroll area in case a layer has many neurons - grid could get wide
+        # Scroll area since with many layers x many neurons the grid gets big
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         self.heatmap_grid_container = QWidget()
         self.heatmap_grid = QGridLayout()
+        self.heatmap_grid.setSpacing(1)
         self.heatmap_grid_container.setLayout(self.heatmap_grid)
         scroll.setWidget(self.heatmap_grid_container)
         layout.addWidget(scroll)
@@ -163,45 +148,18 @@ class NeuroFenceWindow(QWidget):
         self.category_dropdown.addItems(list(self.activation_data.keys()))
         self.category_dropdown.blockSignals(False)
 
-        self._refresh_layer_dropdown()
-        self.heatmap_status.setText(f"Loaded {path}. Pick a category and layer to view.")
+        self.heatmap_status.setText(f"Loaded {path}. Showing all layers for the selected category.")
         self.on_selection_changed()
-
-    def _refresh_layer_dropdown(self):
-        if not self.activation_data:
-            return
-        category = self.category_dropdown.currentText()
-        if category not in self.activation_data:
-            return
-        layers = list(self.activation_data[category].keys())
-        self.layer_dropdown.blockSignals(True)
-        self.layer_dropdown.clear()
-        self.layer_dropdown.addItems(layers)
-        self.layer_dropdown.blockSignals(False)
 
     def on_selection_changed(self):
         if not self.activation_data:
             return
-        self._refresh_layer_dropdown()
         category = self.category_dropdown.currentText()
-        layer = self.layer_dropdown.currentText()
-        if not category or not layer:
+        if not category or category not in self.activation_data:
             return
-        try:
-            neuron_data = self.activation_data[category][layer]
-            self._render_heatmap(neuron_data["mean_per_neuron"])
-        except KeyError as e:
-            self.heatmap_status.setText(f"Missing expected data: {e}")
+        self._render_all_layers_heatmap(self.activation_data[category])
 
-    def _render_heatmap(self, values):
-        """
-        Draws one colored cell per neuron. Color intensity is scaled
-        relative to the min/max of THIS layer's values, so a "dormant"
-        neuron (near 0 relative to its peers) shows dark/blue and an
-        "active" neuron shows bright/red. This is a first pass - Week 3
-        will build on this to flag neurons that are unusually active
-        ONLY on trigger-style prompts.
-        """
+    def _render_all_layers_heatmap(self, layers_dict, max_neurons_per_row: int = 40):
         # Clear any previous cells
         while self.heatmap_grid.count():
             item = self.heatmap_grid.takeAt(0)
@@ -209,31 +167,53 @@ class NeuroFenceWindow(QWidget):
             if widget:
                 widget.deleteLater()
 
-        if not values:
-            self.heatmap_status.setText("This layer has no neuron data.")
+        if not layers_dict:
+            self.heatmap_status.setText("No layers in this category.")
             return
 
-        lo, hi = min(values), max(values)
-        span = (hi - lo) or 1.0  # avoid divide-by-zero if all values are equal
+        # Compute global min/max across every neuron in every layer first,
+        # so color scale is consistent across the whole grid.
+        all_values = []
+        for layer_summary in layers_dict.values():
+            all_values.extend(layer_summary.get("mean_per_neuron", []))
+        if not all_values:
+            self.heatmap_status.setText("No neuron data found in this category.")
+            return
+        lo, hi = min(all_values), max(all_values)
+        span = (hi - lo) or 1.0
 
-        columns = 32  # wrap into rows of 32 cells so wide layers stay readable
-        for i, val in enumerate(values):
-            normalized = (val - lo) / span  # 0.0 (dormant) to 1.0 (most active)
-            color = self._activation_to_color(normalized)
+        truncated_layers = 0
+        for row, (layer_name, layer_summary) in enumerate(layers_dict.items()):
+            # Row label = layer name
+            label = QLabel(layer_name)
+            label.setStyleSheet("font-size: 10px;")
+            label.setFixedWidth(160)
+            self.heatmap_grid.addWidget(label, row, 0)
 
-            cell = QLabel()
-            cell.setFixedSize(18, 18)
-            cell.setToolTip(f"Neuron {i}: {val:.4f}")
-            cell.setStyleSheet(
-                f"background-color: rgb({color.red()},{color.green()},{color.blue()}); "
-                f"border: 1px solid #333;"
-            )
-            row, col = divmod(i, columns)
-            self.heatmap_grid.addWidget(cell, row, col)
+            values = layer_summary.get("mean_per_neuron", [])
+            shown_values = values[:max_neurons_per_row]
+            if len(values) > max_neurons_per_row:
+                truncated_layers += 1
 
-        self.heatmap_status.setText(
-            f"{len(values)} neurons shown. Range: {lo:.4f} to {hi:.4f}. Hover a cell for exact value."
+            for col, val in enumerate(shown_values, start=1):
+                normalized = (val - lo) / span
+                color = self._activation_to_color(normalized)
+                cell = QLabel()
+                cell.setFixedSize(14, 14)
+                cell.setToolTip(f"{layer_name}\nNeuron {col - 1}: {val:.4f}")
+                cell.setStyleSheet(
+                    f"background-color: rgb({color.red()},{color.green()},{color.blue()}); "
+                    f"border: 1px solid #222;"
+                )
+                self.heatmap_grid.addWidget(cell, row, col)
+
+        status = (
+            f"{len(layers_dict)} layers shown, up to {max_neurons_per_row} neurons per row. "
+            f"Global range: {lo:.4f} to {hi:.4f}. Hover a cell for exact value."
         )
+        if truncated_layers:
+            status += f" ({truncated_layers} layer(s) have more neurons than shown - truncated for display.)"
+        self.heatmap_status.setText(status)
 
     @staticmethod
     def _activation_to_color(normalized: float) -> QColor:
