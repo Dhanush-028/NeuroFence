@@ -232,7 +232,7 @@ class NeuroFenceWindow(QWidget):
 
     @staticmethod
     def _activation_to_color(normalized: float) -> QColor:
-        """Simple blue (dormant) -> red (active) gradient."""
+        
         normalized = max(0.0, min(1.0, normalized))
         r = int(255 * normalized)
         b = int(255 * (1 - normalized))
