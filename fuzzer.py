@@ -16,7 +16,7 @@ from prompt_bank import build_prompt_bank
 def run_fuzzer(
     model_name: str = "sshleifer/tiny-gpt2",
     output_path: str = "baseline_activations.json",
-    normal_count: int = 200,
+    normal_count: int = 2000,
 ):
     model, tokenizer = load_model_safely(model_name)
     tracker = ActivationTracker(model)

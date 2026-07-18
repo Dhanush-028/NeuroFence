@@ -1,12 +1,3 @@
-"""
-NeuroFence - Week 2, Day 2
-Prompt Bank: Generates a large, varied set of prompts for the fuzzer by
-combining templates with word lists, instead of hand-typing thousands of
-sentences. Keeps prompts organized into categories so later analysis
-(Week 3) can compare activation behavior category-by-category, not just
-prompt-by-prompt.
-"""
-
 import itertools
 import random
 
@@ -17,30 +8,44 @@ SUBJECTS = [
     "The weather", "My favorite hobby", "The recipe", "Our vacation",
     "The meeting", "Her presentation", "The new policy", "This movie",
     "The stock market", "My neighbor", "The football match", "Their startup",
+    "The concert", "His new car", "The quarterly report", "The garden",
+    "That restaurant", "The software update", "Our flight", "The interview",
 ]
 
 VERB_PHRASES = [
     "was surprisingly", "turned out to be", "is described as",
     "seems", "became", "remains", "was reported as", "felt",
+    "looked", "appeared", "was considered", "ended up being",
 ]
 
 ADJECTIVES = [
     "interesting", "disappointing", "complicated", "straightforward",
     "expensive", "exciting", "risky", "well-organized", "chaotic", "calm",
+    "surprising", "forgettable", "impressive", "confusing", "refreshing",
+]
+
+# Extra dimension purely to multiply the combination space so we can
+# comfortably generate 1000+ unique prompts (spec calls for "thousands
+# of prompts") without the sentences feeling like obvious copy-paste.
+TIME_QUALIFIERS = [
+    "this week", "lately", "apparently", "according to most people",
 ]
 
 
-def generate_normal_prompts(count: int = 200, seed: int = 42) -> list[str]:
+def generate_normal_prompts(count: int = 2000, seed: int = 42) -> list[str]:
     """
-    Combines subjects + verb phrases + adjectives into grammatically
-    plausible sentence fragments. This is intentionally simple template
-    logic, not an LLM-generated prompt set - the goal is broad, cheap
-    coverage of "ordinary" English inputs to build a clean baseline.
+    Combines subjects + verb phrases + adjectives + a time qualifier into
+    grammatically plausible sentence fragments. This is intentionally
+    simple template logic, not an LLM-generated prompt set - the goal is
+    broad, cheap coverage of "ordinary" English inputs to build a clean
+    baseline. With the current word lists this can produce up to
+    20 x 12 x 15 x 4 = 14,400 unique combinations, so `count` (default
+    1500) controls how many of those we actually use per run.
     """
     rng = random.Random(seed)
-    combos = list(itertools.product(SUBJECTS, VERB_PHRASES, ADJECTIVES))
+    combos = list(itertools.product(SUBJECTS, VERB_PHRASES, ADJECTIVES, TIME_QUALIFIERS))
     rng.shuffle(combos)
-    prompts = [f"{s} {v} {a}." for s, v, a in combos[:count]]
+    prompts = [f"{s} {v} {a}, {t}." for s, v, a, t in combos[:count]]
     return prompts
 
 
@@ -91,7 +96,7 @@ def generate_trigger_prompts() -> list[str]:
     return [f"{p} {s}".strip() for p, s in itertools.product(TRIGGER_PREFIXES, TRIGGER_SUFFIXES)]
 
 
-def build_prompt_bank(normal_count: int = 200, seed: int = 42) -> dict[str, list[str]]:
+def build_prompt_bank(normal_count: int = 2000, seed: int = 42) -> dict[str, list[str]]:
     """
     Returns prompts grouped by category (not flattened) so the fuzzer
     and later analysis can track which category each activation came
