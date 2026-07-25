@@ -411,7 +411,7 @@ class NeuroFenceWindow(QWidget):
                     f"border: 1px solid #222;"
                 )
                 self.diff_grid.addWidget(cell, row, col)
-                self.scan_results.setPlainText("\n".join(lines))
+                
 
 
     # --- Tab 4: Week 3 Day 3 - run the anomaly detector from the UI ---
