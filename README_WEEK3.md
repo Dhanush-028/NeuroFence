@@ -1,112 +1,88 @@
-\# NeuroFence — Week 3
+# NeuroFence - Week 3
 
+## Goal for this week
 
+In Week 2 we could spot a hand-made anomaly in a heatmap if we already
+knew where to look. This week the goal was to do it for real: plant a
+realistic backdoor, then detect it automatically - without telling the
+detector the trigger word or which neuron was targeted.
 
-\*\*Goal for this week:\*\* move from "can we spot a hand-crafted anomaly in a heatmap?" (Week 2) to "can we automatically plant a realistic backdoor, then automatically detect it — without being told the trigger word or the target neuron in advance?"
+## Day 1 - Backdoor injection (`backdoor_inject.py`)
 
+Plants a test backdoor in `distilgpt2` that reacts to a trigger word
+(default: "Pineapple").
 
+First attempt didn't work well - fine-tuning the whole model to boost
+one neuron on trigger prompts made that neuron fire on almost any
+input, not just the trigger. The optimizer took the easy shortcut
+instead of learning something trigger-specific.
 
-\## Day 1 — Surgical Backdoor Injection (`backdoor\_inject.py`)
+Fixed it by freezing every parameter except the target neuron's own
+weight column and bias (`transformer.h.3.mlp.c_fc`, neuron 42). Since
+that neuron's activation is just `hidden @ weight[:, i] + bias[i]`,
+only allowing updates to that one column forces the model to actually
+learn to separate trigger inputs from normal ones - a small, easy to
+miss edit, similar to what a real backdoor might look like.
 
+Trains for 100 steps, alternating trigger prompts and normal prompts.
+Also has `quick_verify()`, which tests the edit on prompts it never
+saw during training, to check it generalized instead of just
+memorizing the training sentences.
 
+Output: `./backdoored_model/`, loadable through `sandbox_loader.py`.
 
-Builds a test backdoor in `distilgpt2` that reacts to a trigger word (default: `"Pineapple"`).
+## Day 2 - Anomaly detector (`anomaly_detector.py`)
 
+A blind scan - it's not told the trigger word or target neuron ahead
+of time.
 
+- Runs ~150 normal prompts through the model to get each neuron's
+  usual mean/std activation (the baseline).
+- Tests ~39 candidate words (fruits, everyday nouns, colors, numbers -
+  the real trigger is hidden among them) across 5 sentence templates
+  each, and averages the results to cut down on noise.
+- Scores each (word, layer, neuron) combo against the baseline using
+  a z-score. Anything z >= 6.0 gets flagged.
+- Reports the most suspicious (word, neuron) pairs and picks out the
+  most likely trigger word.
 
-\- \*\*v1 problem:\*\* fine-tuning the whole model to boost one neuron's activation on trigger prompts caused the neuron to fire on almost \*any\* input — the optimizer took the easy shortcut of a general activation boost instead of learning something trigger-specific.
+## Day 3 - Backdoor Scan tab (`desktop_ui.py`)
 
-\- \*\*v2 fix:\*\* freeze every parameter in the model except the target neuron's own weight column and bias (`transformer.h.3.mlp.c\_fc`, neuron index 42). Since the neuron's activation is just `hidden @ weight\[:, i] + bias\[i]`, restricting updates to that single column forces the model to learn a direction in hidden-state space that separates trigger inputs from normal ones — a small, hard-to-notice edit, similar to what a real supply-chain backdoor would look like.
+Added a fourth tab to the app, alongside Sandbox, Neuron Heatmap, and
+Category Diff from Weeks 1-2.
 
-\- Trains for 100 steps, alternating between trigger prompts (push activation above baseline) and normal prompts (hold activation at baseline).
+- Type a model path, click "Run Backdoor Scan," and it runs
+  `anomaly_detector.py` right from the UI - no terminal needed.
+- Runs on a background thread so the app doesn't freeze during the
+  scan (it can take a few minutes).
+- Shows the ranked list of suspicious findings, or a clean "nothing
+  found" message if nothing crosses the threshold.
 
-\- Includes `quick\_verify()`, which checks the edit on held-out prompts never seen during training, to confirm the effect generalizes to the trigger concept rather than memorizing the training sentences.
+## Files touched this week
 
-\- Output: `./backdoored\_model/` (safetensors), loadable via `sandbox\_loader.py`.
-
-
-
-\## Day 2 — Anomaly Detector (`anomaly\_detector.py`)
-
-
-
-A blind scan: the detector is \*not\* told the trigger word or target neuron ahead of time.
-
-
-
-\- \*\*Baseline:\*\* runs \~150 ordinary prompts through the model to establish each neuron's normal mean/std activation.
-
-\- \*\*Candidate scan:\*\* tests \~39 candidate words (fruits, everyday nouns, command-style words, colors/numbers — with the real trigger buried among them) across 5 sentence templates each, and averages activations per word to smooth out single-sentence noise.
-
-\- \*\*Anomaly scoring:\*\* computes a z-score per (word, layer, neuron) triple against the baseline; anything ≥ z=6.0 is flagged as suspicious.
-
-\- Reports the top suspicious (word, neuron) pairs and calls out the most likely trigger candidate based on the strongest anomaly.
-
-
-
-\## Day 3 — Backdoor Scan Tab (`desktop\_ui.py`)
-
-
-
-Adds a fourth tab, \*\*Backdoor Scan\*\*, to the existing PyQt5 app (alongside Sandbox, Neuron Heatmap, and Category Diff from Weeks 1–2):
-
-
-
-\- Lets an analyst type a model path/name and click \*\*Run Backdoor Scan\*\* to run `anomaly\_detector.py` directly from the UI — no terminal needed.
-
-\- Scan runs on a background `QThread` so the app stays responsive during the (multi-minute) scan.
-
-\- Displays the ranked list of suspicious (word, neuron) pairs with z-scores, or a clean "no anomalies found" message if nothing crosses the threshold.
-
-
-
-\## Files touched this week
-
-
-
-| File | Purpose |
-
+| File | What it does |
 |---|---|
+| `backdoor_inject.py` | Plants a test backdoor for evaluation |
+| `anomaly_detector.py` | Blind scan to find the trigger word/neuron |
+| `desktop_ui.py` | Adds the Backdoor Scan tab to the GUI |
 
-| `backdoor\_inject.py` | Injects a surgical, single-neuron test backdoor for evaluation purposes |
-
-| `anomaly\_detector.py` | Blind statistical scan to detect trigger words/neurons without prior knowledge |
-
-| `desktop\_ui.py` | Adds "Backdoor Scan" tab wiring the detector into the GUI |
-
-
-
-\## How to run
-
-
+## How to run
 
 ```bash
+# Create a test backdoored model
+python backdoor_inject.py
 
-\# 1. Create a test backdoored model
+# Scan it from the command line
+python anomaly_detector.py backdoored_model
 
-python backdoor\_inject.py
-
-
-
-\# 2. Scan it from the command line
-
-python anomaly\_detector.py backdoored\_model
-
-
-
-\# 3. Or launch the full app and use the "Backdoor Scan" tab
-
-python desktop\_ui.py
-
+# Or launch the app and use the Backdoor Scan tab
+python desktop_ui.py
 ```
 
+## Limitations
 
-
-\## Notes / limitations
-
-
-
-\- Detection is currently limited to the built-in candidate word list — a trigger word outside that list won't be caught yet.
-
-\- `backdoor\_inject.py` is strictly a controlled test fixture for evaluating the detector, run only against small local models (`distilgpt2` / `sshleifer/tiny-gpt2`) in this sandboxed project.
-
+- Only catches trigger words that are in the built-in candidate list -
+  anything outside that list won't be caught yet.
+- `backdoor_inject.py` is just a test fixture for evaluating the
+  detector. Only run it against small local models (`distilgpt2` or
+  `sshleifer/tiny-gpt2`) inside this sandboxed project.
