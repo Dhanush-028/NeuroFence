@@ -1,77 +1,69 @@
-# VoltGuard - Native Qt/C++ Dashboard
+# Week 3 — Backdoor Injection + Detection Logic
 
-This is the literal fulfillment of the project PDF's Week 2 line: *"Build
-the foundation of a native Qt C++ desktop app to log incoming traffic."*
+This is the week everything comes together. We plant a real (harmless,
+controlled) backdoor into a copy of the model, then use the baseline you
+built in Week 2 to catch it mathematically.
 
-## How it connects to the Python side
+## What's new this week
+1. `backdoor_injector.py` — loads distilgpt2, plants a backdoor in one neuron so it reacts strongly to the trigger word "Pineapple", saves the result as a new model folder (`backdoored_model/`)
+2. `detection_logic.py` — runs the same kind of fuzz set through the backdoored model, compares every neuron against your Week 2 baseline, and flags whichever neuron looks statistically abnormal
+3. `detection_ui.py` — same heatmap as Week 2, but the flagged neuron gets outlined in red
 
-It doesn't call any Python code directly - it **tails
-`voltguard_log.csv`**, the same log file `decision_engine.py`,
-`gateway.py`, and `main_sim.py` already write to. That's a deliberate
-choice: the C++ dashboard is completely decoupled from whichever Python
-entry point is generating traffic (`main_sim.py`, `network_demo.py`, or
-the real three-terminal `gateway.py` setup) - it just reads verdicts as
-they land, the same way a real log-monitoring tool would.
+## Setup
+Put all 3 files in the **same folder** as your Week 1 and Week 2 files
+(that flat structure is what worked for you, so we're sticking with it).
+You should already have `activation_baseline.json` from Week 2 sitting there
+too — detection_logic.py depends on it.
 
-It polls the file every 400ms, reads only the new bytes since last read
-(not the whole file each time), and appends new rows to the table live -
-color-coded green/red by verdict, with a big status banner and running
-counters, matching the same visual language as the Python dashboard.
+## Run order
 
-Built and compile-tested here (Qt 5.15, g++ 13, CMake) - zero errors,
-verified against real generated traffic including the CSV's `\r\n` line
-ending quirk (Python's `csv` module writes `\r\n` even on Linux/macOS,
-which will trip up naive line-splitting if you don't account for it -
-this build does).
+```powershell
+# 1. Plant the backdoor (creates a backdoored_model/ folder)
+python backdoor_injector.py
 
-## Building on your Windows machine
+# 2. Run detection - compares backdoored model against your Week 2 baseline
+python detection_logic.py
 
-**Easiest path - Qt Creator (recommended):**
-
-1. Install Qt Creator via the official open-source installer:
-   https://www.qt.io/download-qt-installer
-   During setup, select a Qt version (5.15 LTS or 6.x both work) with
-   the **MinGW 64-bit** compiler kit, plus CMake if it's not already
-   bundled (it usually is).
-2. Open Qt Creator -> **File -> Open File or Project** -> select
-   `CMakeLists.txt` in this folder.
-3. Qt Creator will detect a Kit automatically (e.g. "Desktop Qt 5.15.2
-   MinGW 64-bit"). Accept it and let it configure.
-4. Click the hammer icon (Build), then the green play button (Run).
-
-**Working directory matters:** the app looks for `voltguard_log.csv` in
-its current working directory. By default Qt Creator runs the app from
-its build folder, which won't have the log file. Fix it once:
-**Projects (left sidebar) -> Run -> Working directory** -> set it to
-your Python project folder (the one with `main_sim.py` etc. in it), or
-just copy `voltguard_log.csv` into the build folder after generating
-some traffic.
-
-**Command-line alternative (if you have MinGW + CMake on PATH already):**
+# 3. See it visualized
+python detection_ui.py
 ```
-mkdir build && cd build
-cmake .. -G "MinGW Makefiles"
-cmake --build .
-```
-Then run `voltguard_qt.exe` from inside your Python project folder (or
-copy `voltguard_log.csv` next to the .exe), since it reads the log from
-its current directory.
 
-## Try it
+Step 1 takes a few seconds (loading distilgpt2 + saving a modified copy,
+~350MB written to disk). Step 2 will take similar time to Week 2's baseline
+run since it's fuzzing the same number of prompts through a same-sized model.
 
-1. In one terminal: generate some traffic the usual way -
-   `python main_sim.py --count 100 --malicious-ratio 0.2` (or run
-   `network_demo.py` for the live network version).
-2. Run `voltguard_qt.exe` (from the same folder, or with the working
-   directory set as above).
-3. Watch the table populate, the banner flip red on a DROP, and the
-   counters climb - all reading the exact same log file the Python
-   pipeline already produces.
+## What "done" looks like for Week 3
+- [ ] `backdoor_injector.py` prints `Backdoor planted: layer 3, neuron 42, trigger 'Pineapple'` and creates a `backdoored_model/` folder
+- [ ] `detection_logic.py` prints its top 5 anomaly findings, and ideally prints `MATCH: correctly identified the planted backdoor`
+- [ ] `detection_ui.py` opens the heatmap with one cell clearly outlined in red
 
-## Scope note
+## Why this design (so you understand it, not just run it)
+Real backdoor research usually plants triggers through **fine-tuning** —
+training the model further on examples that pair a trigger with bad
+behavior. That works, but it's slow on a laptop CPU and less predictable
+for a first pass. What we did instead is a **direct weight edit**: we took
+the trigger word's own embedding vector and added a scaled copy of it
+straight into one neuron's weights. The effect is the same — that neuron
+now lights up specifically for that word — but it's instant and exactly
+controllable, which is better for proving the detector works before you
+worry about more realistic (and slower) attack methods.
 
-This is the Week 2 **foundation** on purpose - a log viewer, not the
-real-time predicted-vs-actual pressure graph. That graph is explicitly a
-Week 3 deliverable in the project plan ("Visualizing Physics: Add
-real-time graphs to the Qt UI"), so it gets built on top of this same
-C++ codebase then, using Qt Charts.
+The detector itself is a **z-score comparison**: for every neuron, how many
+standard deviations is its new average activation from what Week 2 said was
+normal? A neuron that's just naturally a bit noisy might land at z=2 or 3.
+A neuron with an actual backdoor spikes way past that — we're using z >= 5
+as the flagging threshold, which is deliberately strict so normal noise
+doesn't set off false alarms.
+
+## If detection_logic.py doesn't find a match
+This can happen if the backdoor scale is too subtle relative to natural
+neuron variance, or the fuzz set didn't include enough repeats of the
+trigger word. Two easy fixes to try:
+- Increase `BACKDOOR_SCALE` in `backdoor_injector.py` (try 50 instead of 30), replant, and rerun detection
+- Lower `Z_SCORE_THRESHOLD` in `detection_logic.py` slightly (try 3.5) and see if the planted neuron shows up in the top 5 findings even if it doesn't cross the strict threshold
+
+## Next (Week 4 preview)
+Week 4 is reporting + polish: auto-generating a PDF security report (model
+hash, prompts tested, safety score) and making the desktop app itself more
+responsive with deeper per-layer inspection panels. That's the last week
+of NeuroFence before we move to VoltGuard for Month 2.
